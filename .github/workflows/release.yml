@@ -61,7 +61,14 @@ jobs:
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: |
           KEY_FILE="$RUNNER_TEMP/AuthKey.p8"
-          printf '%s' "$NOTARY_KEY" > "$KEY_FILE"
+          # Accept the key stored either as raw PEM or base64-encoded PEM.
+          if printf '%s' "$NOTARY_KEY" | grep -q "BEGIN PRIVATE KEY"; then
+            printf '%s\n' "$NOTARY_KEY" > "$KEY_FILE"
+          else
+            printf '%s' "$NOTARY_KEY" | base64 --decode > "$KEY_FILE" 2>/dev/null || true
+          fi
+          grep -q "BEGIN PRIVATE KEY" "$KEY_FILE" \
+            || { echo "NOTARY_KEY secret is neither a PEM key nor base64-encoded PEM"; exit 1; }
 
           ditto -c -k --keepParent "build/sesh-bar.app" "$RUNNER_TEMP/notarize.zip"
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
