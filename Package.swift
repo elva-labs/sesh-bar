@@ -16,6 +16,7 @@ let package = Package(
             ],
             path: "Sources/AwseshCore"
         ),
+        .executableTarget(name: "SeshBar", dependencies: ["AwseshCore"], path: "Sources/SeshBar"),
         .testTarget(name: "AwseshCoreTests", dependencies: ["AwseshCore"], path: "Tests/AwseshCoreTests"),
     ]
 )

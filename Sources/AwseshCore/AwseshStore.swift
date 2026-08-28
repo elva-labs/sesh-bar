@@ -222,15 +222,15 @@ public struct AwseshStore: Sendable {
 }
 
 extension ISO8601DateFormatter {
-    static let awseshMillis: ISO8601DateFormatter = {
+    public static let awseshMillis: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
 
-    static let awseshLenient = ISO8601DateFormatter()
+    public static let awseshLenient = ISO8601DateFormatter()
 
-    func dateLenient(from string: String) -> Date? {
+    public func dateLenient(from string: String) -> Date? {
         ISO8601DateFormatter.awseshMillis.date(from: string)
             ?? ISO8601DateFormatter.awseshLenient.date(from: string)
     }
