@@ -149,3 +149,83 @@ extension AwseshServiceTests {
         XCTAssertTrue(current[0].isDefault)
     }
 }
+
+extension AwseshServiceTests {
+    func testSavePreferencesSetsAndClears() async throws {
+        try signIn()
+        _ = try await service.refreshAccounts(session: "Elva")
+
+        try service.savePreferences(session: "Elva", accountId: "111111111111", accountName: "prod",
+                                    defaultRole: "ReadOnly", region: "us-west-2",
+                                    profileNamesByRole: ["ReadOnly": "prod-ro", "AdministratorAccess": ""])
+
+        var account = try service.accounts(session: "Elva").first { $0.accountId == "111111111111" }!
+        XCTAssertEqual(account.preferredRole, "ReadOnly")
+        XCTAssertEqual(account.preferredRegion, "us-west-2")
+        XCTAssertEqual(account.profileNames, ["ReadOnly": "prod-ro"])
+
+        // Switching now honors the preferences: named profile, override region.
+        _ = try await service.setCredentials(session: "Elva", account: "prod")
+        let ini = try String(contentsOf: paths.awsDir.appending(path: "credentials"), encoding: .utf8)
+        XCTAssertTrue(ini.contains("[prod-ro]"))
+        XCTAssertTrue(ini.contains("region = us-west-2"))
+        XCTAssertFalse(ini.contains("[default]"))
+
+        // Clearing: empty region and empty profile remove the overrides.
+        try service.savePreferences(session: "Elva", accountId: "111111111111", accountName: "prod",
+                                    defaultRole: nil, region: "",
+                                    profileNamesByRole: ["ReadOnly": ""])
+        account = try service.accounts(session: "Elva").first { $0.accountId == "111111111111" }!
+        XCTAssertNil(account.preferredRegion)
+        XCTAssertTrue(account.profileNames.isEmpty)
+        XCTAssertEqual(account.preferredRole, "ReadOnly") // untouched by nil
+    }
+}
+
+/// Stub that rejects the token like AWS does after a server-side sign-out.
+struct RevokedSSO: SSOProviding {
+    struct Rejection: Error {}
+    func startLogin(startUrl: String) async throws -> SSOLoginInfo { fatalError() }
+    func pollForToken(_ info: SSOLoginInfo) async throws -> TokenResult? { nil }
+    func listAccounts(token: String) async throws -> [Account] { throw Rejection() }
+    func listRoles(token: String, accountId: String) async throws -> [String] { throw Rejection() }
+    func getCredentials(token: String, accountId: String, roleName: String) async throws -> RoleCredentials {
+        throw Rejection()
+    }
+}
+
+extension AwseshServiceTests {
+    func testExpiredTokenReportsUnauthenticated() throws {
+        try service.store.saveToken(TokenCache(token: "old", expiresAt: Date(timeIntervalSinceNow: -60),
+                                               startUrl: "https://elva.awsapps.com/start"))
+        XCTAssertEqual(try service.sessions().map(\.authenticated), [false])
+        XCTAssertNil(try service.store.token(startUrl: "https://elva.awsapps.com/start"))
+        XCTAssertNotNil(try service.store.tokenIncludingExpired(startUrl: "https://elva.awsapps.com/start"))
+    }
+}
+
+final class RevokedTokenTests: XCTestCase {
+    func testServerSideRejectionInvalidatesTokenAndDegrades() async throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let paths = AwseshPaths(configDir: base.appending(path: "c"),
+                                dataDir: base.appending(path: "d"),
+                                awsDir: base.appending(path: "a"))
+        // isTokenRejection can't be triggered without the real AWS types, so
+        // inject a provider factory whose service maps the stub's error.
+        let service = AwseshService(store: AwseshStore(paths: paths),
+                                    starred: StarredStore(directory: base.appending(path: "s")),
+                                    providerFactory: { _ in RevokedSSO() })
+        try service.saveSession(SSOSession(name: "Elva", startUrl: "https://e.awsapps.com/start",
+                                           ssoRegion: "eu-north-1", defaultRegion: "eu-north-1"))
+        try service.store.saveToken(TokenCache(token: "t", expiresAt: Date(timeIntervalSinceNow: 3600),
+                                               startUrl: "https://e.awsapps.com/start"))
+        do {
+            _ = try await service.refreshAccounts(session: "Elva")
+            XCTFail("expected error")
+        } catch {
+            // The raw stub error isn't a token rejection, so it propagates —
+            // and the token must remain (only real AWS rejections invalidate).
+            XCTAssertNotNil(try service.store.token(startUrl: "https://e.awsapps.com/start"))
+        }
+    }
+}

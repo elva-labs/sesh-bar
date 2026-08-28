@@ -18,8 +18,8 @@ func shortRole(_ role: String) -> String {
 
 func roleColor(_ role: String) -> Color {
     let lower = role.lowercased()
-    if lower.contains("admin") { return .red }
-    if lower.contains("power") { return .orange }
+    if lower.contains("admin") { return .purple }
+    if lower.contains("power") { return .teal }
     if lower.contains("readonly") || lower.contains("read-only") { return .blue }
     return .secondary
 }

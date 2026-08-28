@@ -20,6 +20,12 @@ public struct TokenResult: Sendable {
     public let expiresAt: Date
 }
 
+/// True when AWS rejected the cached SSO token (revoked server-side, e.g.
+/// signed out of the organization) — the local cache is then worthless.
+public func isTokenRejection(_ error: Error) -> Bool {
+    error is AWSSSO.UnauthorizedException || error is AWSSSOOIDC.AccessDeniedException
+}
+
 public enum SSOServiceError: LocalizedError {
     case deviceCodeExpired
     case missingField(String)

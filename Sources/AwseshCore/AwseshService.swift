@@ -117,15 +117,26 @@ public struct AwseshService: Sendable {
         let session = try requireSession(sessionName)
         let token = try requireToken(session)
         let provider = providerFactory(session.ssoRegion)
-        var accounts = try await provider.listAccounts(token: token.token)
-        for i in accounts.indices where !accounts[i].rolesLoaded {
-            accounts[i].roles = try await provider.listRoles(token: token.token, accountId: accounts[i].accountId)
-            accounts[i].rolesLoaded = true
+        do {
+            var accounts = try await provider.listAccounts(token: token.token)
+            for i in accounts.indices where !accounts[i].rolesLoaded {
+                accounts[i].roles = try await provider.listRoles(token: token.token, accountId: accounts[i].accountId)
+                accounts[i].rolesLoaded = true
+            }
+            try store.saveAccountCache(AccountCache(accounts: accounts,
+                                                    lastUpdated: Date().timeIntervalSince1970 * 1000),
+                                       sessionName: sessionName)
+        } catch where isTokenRejection(error) {
+            try invalidateToken(for: session)
+            throw AwseshServiceError.notSignedIn(sessionName)
         }
-        try store.saveAccountCache(AccountCache(accounts: accounts,
-                                                lastUpdated: Date().timeIntervalSince1970 * 1000),
-                                   sessionName: sessionName)
         return try self.accounts(session: sessionName)
+    }
+
+    /// AWS rejected the token even though it hadn't expired locally — drop
+    /// the cache so the UI degrades to "Not signed in" instead of erroring.
+    private func invalidateToken(for session: SSOSession) throws {
+        try store.removeToken(startUrl: session.startUrl)
     }
 
     /// Switch the default AWS profile to the given account/role.
@@ -152,9 +163,15 @@ public struct AwseshService: Sendable {
                                                 accountName: account.name, roleName: roleName)
 
         let provider = providerFactory(session.ssoRegion)
-        let credentials = try await provider.getCredentials(token: token.token,
+        let credentials: RoleCredentials
+        do {
+            credentials = try await provider.getCredentials(token: token.token,
                                                             accountId: account.accountId,
                                                             roleName: roleName)
+        } catch where isTokenRejection(error) {
+            try invalidateToken(for: session)
+            throw AwseshServiceError.notSignedIn(sessionName)
+        }
         let result = try store.setCredential(credentials, sessionName: sessionName,
                                              accountId: account.accountId, accountName: account.name,
                                              roleName: roleName, region: resolvedRegion,
@@ -244,15 +261,29 @@ public struct AwseshService: Sendable {
         try starred.setStarred(value, session: session, accountId: accountId)
     }
 
-    public func setAccountPrefs(session: String, accountId: String, accountName: String,
-                                role: String, region: String?, profileName: String?) throws {
-        if let region, !region.isEmpty {
-            try store.savePreferredRegion(region, sessionName: session, accountId: accountId)
+    /// Persist the account-settings sheet in one call. Empty region clears
+    /// the override (an improvement over the Glaze app, which couldn't);
+    /// empty profile names clear the custom profile for that role.
+    public func savePreferences(session: String, accountId: String, accountName: String,
+                                defaultRole: String?, region: String?,
+                                profileNamesByRole: [String: String]) throws {
+        if let defaultRole, !defaultRole.isEmpty {
+            try store.savePreferredRole(defaultRole, sessionName: session, accountId: accountId)
         }
-        if let profileName {
-            // Empty string clears the custom profile name, mirroring the Glaze app.
-            try store.saveProfileName(profileName, sessionName: session,
-                                      accountName: accountName, roleName: role)
+        let trimmedRegion = region?.trimmingCharacters(in: .whitespaces) ?? ""
+        if trimmedRegion.isEmpty {
+            try store.removePreferredRegion(sessionName: session, accountId: accountId)
+        } else {
+            try store.savePreferredRegion(trimmedRegion, sessionName: session, accountId: accountId)
+        }
+        for (role, profile) in profileNamesByRole {
+            let trimmed = profile.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                try store.removeProfileName(sessionName: session, accountName: accountName, roleName: role)
+            } else {
+                try store.saveProfileName(trimmed, sessionName: session,
+                                          accountName: accountName, roleName: role)
+            }
         }
     }
 

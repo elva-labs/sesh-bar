@@ -21,6 +21,11 @@ final class AppState: ObservableObject {
     @Published var loginFlow: LoginFlow? = nil
     @Published var loginError: String? = nil
     @Published var notice: String? = nil
+    @Published var search = "" { didSet { clampSelection() } }
+    @Published var selectedEntryID: String? = nil
+    /// Bumped when the popover opens so the view refocuses the search field.
+    @Published var focusToken = 0
+    @Published var accountSettingsTarget: Entry? = nil
 
     /// Fires when the active credential changes, so the tray can retitle.
     var onActiveChanged: (() -> Void)?
@@ -33,6 +38,88 @@ final class AppState: ObservableObject {
 
     var active: CredentialInfo? {
         current.first(where: \.isDefault) ?? current.first
+    }
+
+    /// The active credential outlives its SSO session (issued STS creds are
+    /// not revoked by sign-out) — true when that's the current situation.
+    var activeSessionSignedOut: Bool {
+        guard let active else { return false }
+        return !(sessions.first { $0.name == active.sessionName }?.authenticated ?? false)
+    }
+
+    // MARK: - Visible entries & keyboard selection
+
+    struct Entry: Identifiable, Equatable {
+        let session: SessionInfo
+        let account: AccountInfo
+        var id: String { "\(session.name)|\(account.accountId)" }
+        static func == (lhs: Entry, rhs: Entry) -> Bool { lhs.id == rhs.id }
+    }
+
+    private func matches(_ entry: Entry) -> Bool {
+        let term = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !term.isEmpty else { return true }
+        let haystack = "\(entry.session.name) \(entry.account.name) \(entry.account.accountId) \(entry.account.roles.joined(separator: " "))".lowercased()
+        return term.split(separator: " ").allSatisfy { haystack.contains($0) }
+    }
+
+    var starredEntries: [Entry] {
+        sessions.filter(\.authenticated).flatMap { session in
+            (accounts[session.name] ?? []).filter(\.starred)
+                .map { Entry(session: session, account: $0) }
+        }.filter(matches(_:))
+    }
+
+    func sessionEntries(_ session: SessionInfo) -> [Entry] {
+        (accounts[session.name] ?? []).filter { !$0.starred }
+            .map { Entry(session: session, account: $0) }
+            .filter(matches(_:))
+    }
+
+    /// Everything currently visible, in display order.
+    var visibleEntries: [Entry] {
+        starredEntries + sessions.flatMap { sessionEntries($0) }
+    }
+
+    private func clampSelection() {
+        let visible = visibleEntries
+        if let selected = selectedEntryID, visible.contains(where: { $0.id == selected }) { return }
+        selectedEntryID = visible.first?.id
+    }
+
+    func moveSelection(_ delta: Int) {
+        let visible = visibleEntries
+        guard !visible.isEmpty else { return }
+        guard let selected = selectedEntryID,
+              let index = visible.firstIndex(where: { $0.id == selected }) else {
+            selectedEntryID = (delta >= 0 ? visible.first : visible.last)?.id
+            return
+        }
+        let next = min(max(index + delta, 0), visible.count - 1)
+        selectedEntryID = visible[next].id
+    }
+
+    /// ⌘1…⌘9 switch to the Nth visible starred account.
+    func quickSelect(_ number: Int) {
+        let starred = starredEntries
+        guard (1...starred.count).contains(number) else { return }
+        let entry = starred[number - 1]
+        switchTo(session: entry.session.name, account: entry.account,
+                 role: defaultRole(for: entry.account))
+    }
+
+    func activateSelection() {
+        guard let selected = selectedEntryID,
+              let entry = visibleEntries.first(where: { $0.id == selected }) else { return }
+        switchTo(session: entry.session.name, account: entry.account,
+                 role: defaultRole(for: entry.account))
+    }
+
+    func popoverOpened() {
+        reload()
+        search = ""
+        selectedEntryID = visibleEntries.first?.id
+        focusToken += 1
     }
 
     // MARK: - Loading
@@ -59,6 +146,12 @@ final class AppState: ObservableObject {
             for session in sessions where session.authenticated {
                 do {
                     accounts[session.name] = try await service.refreshAccounts(session: session.name)
+                } catch let error as AwseshServiceError {
+                    if case .notSignedIn(let name) = error {
+                        notice = "Signed out of \(name) — sign in again."
+                    } else {
+                        show(error)
+                    }
                 } catch {
                     show(error)
                 }
@@ -77,6 +170,13 @@ final class AppState: ObservableObject {
                 let message = try await service.setCredentials(
                     session: session, account: account.name, role: role)
                 notice = message
+                reload()
+            } catch let error as AwseshServiceError {
+                if case .notSignedIn(let name) = error {
+                    notice = "Signed out of \(name) — sign in again."
+                } else {
+                    show(error)
+                }
                 reload()
             } catch {
                 show(error)
@@ -174,12 +274,16 @@ final class AppState: ObservableObject {
         }
     }
 
-    func setAccountPrefs(session: String, account: AccountInfo, role: String,
-                         region: String?, profileName: String?) {
+    func saveAccountSettings(entry: Entry, defaultRole: String?, region: String?,
+                             profileNamesByRole: [String: String]) {
         do {
-            try service.setAccountPrefs(session: session, accountId: account.accountId,
-                                        accountName: account.name, role: role,
-                                        region: region, profileName: profileName)
+            try service.savePreferences(session: entry.session.name,
+                                        accountId: entry.account.accountId,
+                                        accountName: entry.account.name,
+                                        defaultRole: defaultRole, region: region,
+                                        profileNamesByRole: profileNamesByRole)
+            accountSettingsTarget = nil
+            notice = "Saved settings for \(entry.account.name)"
             reload()
         } catch {
             show(error)

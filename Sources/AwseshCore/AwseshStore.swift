@@ -41,7 +41,14 @@ public struct AwseshStore: Sendable {
 
     // MARK: - Token cache
 
+    /// Only returns a token that hasn't expired, like the JS SDK's
+    /// `tokens.get`. Use `tokenIncludingExpired` for the raw cache.
     public func token(startUrl: String) throws -> TokenCache? {
+        guard let cache = try tokenIncludingExpired(startUrl: startUrl), cache.isValid else { return nil }
+        return cache
+    }
+
+    public func tokenIncludingExpired(startUrl: String) throws -> TokenCache? {
         try storage.read(TokenCache.self, key: "token/\(startUrlHash(startUrl))")
     }
 
@@ -113,6 +120,12 @@ public struct AwseshStore: Sendable {
         try storage.write(map, key: "preference/preferred-regions")
     }
 
+    public func removePreferredRegion(sessionName: String, accountId: String) throws {
+        var map = try storage.read([String: [String: String]].self, key: "preference/preferred-regions") ?? [:]
+        map[sessionName]?.removeValue(forKey: accountId)
+        try storage.write(map, key: "preference/preferred-regions")
+    }
+
     public func profileName(sessionName: String, accountName: String, roleName: String) throws -> String? {
         let map = try storage.read([String: [String: [String: String]]].self, key: "preference/profile-names") ?? [:]
         return map[sessionName]?[accountName]?[roleName]
@@ -121,6 +134,12 @@ public struct AwseshStore: Sendable {
     public func saveProfileName(_ profileName: String, sessionName: String, accountName: String, roleName: String) throws {
         var map = try storage.read([String: [String: [String: String]]].self, key: "preference/profile-names") ?? [:]
         map[sessionName, default: [:]][accountName, default: [:]][roleName] = profileName
+        try storage.write(map, key: "preference/profile-names")
+    }
+
+    public func removeProfileName(sessionName: String, accountName: String, roleName: String) throws {
+        var map = try storage.read([String: [String: [String: String]]].self, key: "preference/profile-names") ?? [:]
+        map[sessionName]?[accountName]?.removeValue(forKey: roleName)
         try storage.write(map, key: "preference/profile-names")
     }
 

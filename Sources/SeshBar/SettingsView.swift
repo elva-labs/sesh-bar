@@ -1,4 +1,5 @@
 import AwseshCore
+import KeyboardShortcuts
 import SwiftUI
 
 struct SettingsView: View {
@@ -18,6 +19,9 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("General") {
+                KeyboardShortcuts.Recorder("Open sesh-bar:", name: .togglePopover)
+            }
             Section("SSO sessions") {
                 if state.sessions.isEmpty {
                     Text("No sessions yet.").foregroundStyle(.secondary)
@@ -57,7 +61,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 320)
+        .frame(width: 480, height: 380)
         .sheet(item: $editing) { target in
             SessionForm(state: state, target: target) { editing = nil }
         }
