@@ -137,9 +137,24 @@ public struct AwseshStore: Sendable {
         return list
     }
 
+    /// Mirrors the JS SDK's save: drops expired entries and the replaced
+    /// account/role, demotes every other entry when the new one is default,
+    /// and purges stale non-default leftovers still claiming the "default"
+    /// profile (that profile can only hold one credential).
     public func saveActiveCredential(_ credential: ActiveCredential) throws {
-        var list = try storage.read([ActiveCredential].self, key: "credentials/active") ?? []
-        list.removeAll { $0.accountId == credential.accountId && $0.roleName == credential.roleName }
+        let now = Date()
+        var list = (try storage.read([ActiveCredential].self, key: "credentials/active") ?? [])
+            .filter { entry in
+                guard let date = ISO8601DateFormatter.awseshLenient.dateLenient(from: entry.expiration) else { return true }
+                return date > now
+            }
+            .filter { !($0.accountId == credential.accountId && $0.roleName == credential.roleName) }
+            .map { entry in
+                var entry = entry
+                if credential.isDefault { entry.isDefault = false }
+                return entry
+            }
+            .filter { $0.isDefault || $0.profileName != "default" }
         list.append(credential)
         try storage.write(list, key: "credentials/active")
     }

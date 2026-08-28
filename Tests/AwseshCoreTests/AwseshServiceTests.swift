@@ -133,3 +133,19 @@ final class AwseshServiceTests: XCTestCase {
                        "https://x.awsapps.com/start/#/console?account_id=1&role_name=Admin")
     }
 }
+
+extension AwseshServiceTests {
+    /// Regression: switching accounts on the default profile must leave
+    /// exactly one active/default entry — the new one.
+    func testSwitchingAccountsReplacesDefaultActiveEntry() async throws {
+        try signIn()
+        _ = try await service.refreshAccounts(session: "Elva")
+        _ = try await service.setCredentials(session: "Elva", account: "prod")
+        _ = try await service.setCredentials(session: "Elva", account: "dev")
+
+        let current = try service.current()
+        XCTAssertEqual(current.count, 1)
+        XCTAssertEqual(current[0].accountName, "dev")
+        XCTAssertTrue(current[0].isDefault)
+    }
+}

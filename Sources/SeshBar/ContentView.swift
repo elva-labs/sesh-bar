@@ -279,11 +279,13 @@ struct AccountRow: View {
                            role: defaultRole(for: account))
         } label: {
             HStack(spacing: 10) {
-                Circle().fill(.quaternary)
+                Circle().fill(isActive ? AnyShapeStyle(Color.accentColor.opacity(0.25)) : AnyShapeStyle(.quaternary))
                     .frame(width: 26, height: 26)
                     .overlay(Text(initials(account.name)).font(.caption2.weight(.semibold)))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(account.name).lineLimit(1)
+                    Text(account.name)
+                        .fontWeight(isActive ? .semibold : .regular)
+                        .lineLimit(1)
                     Text(account.accountId)
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
@@ -292,7 +294,12 @@ struct AccountRow: View {
                     Image(systemName: "star.fill").font(.caption2).foregroundStyle(.orange)
                 }
                 if isActive {
-                    Circle().fill(.green).frame(width: 7, height: 7)
+                    Label("Active", systemImage: "checkmark.circle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .labelStyle(.titleAndIcon)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.green.opacity(0.18), in: Capsule())
+                        .foregroundStyle(.green)
                 }
                 if !displayRole.isEmpty {
                     Text(shortRole(displayRole))
@@ -305,9 +312,22 @@ struct AccountRow: View {
                     ProgressView().controlSize(.small)
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 5)
+            .padding(.horizontal, 8).padding(.vertical, 5)
             .contentShape(Rectangle())
-            .background(hovering ? Color.primary.opacity(0.06) : .clear)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isActive ? Color.accentColor.opacity(0.14)
+                          : hovering ? Color.primary.opacity(0.06) : .clear)
+            )
+            .overlay(alignment: .leading) {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.accentColor)
+                        .frame(width: 3)
+                        .padding(.vertical, 4)
+                }
+            }
+            .padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
         .disabled(state.switching != nil)
