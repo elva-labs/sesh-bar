@@ -17,6 +17,7 @@ on:
 jobs:
   release:
     runs-on: macos-15
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
