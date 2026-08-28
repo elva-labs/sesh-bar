@@ -30,6 +30,7 @@ struct ContentView: View {
             footer
         }
         .frame(width: 380, height: 540)
+        .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .bottom) { noticeBanner }
         .sheet(item: $state.loginFlow) { flow in
             LoginSheet(state: state, flow: flow)
@@ -117,7 +118,7 @@ struct ContentView: View {
             Spacer()
         }
         .padding(.horizontal, 12).padding(.vertical, 4)
-        .background(.regularMaterial)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func sessionHeader(_ session: SessionInfo) -> some View {
@@ -186,7 +187,8 @@ struct ContentView: View {
             Text(notice)
                 .font(.caption).lineLimit(3)
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
                 .padding(.bottom, 40)
                 .task {
                     try? await Task.sleep(nanoseconds: 4_000_000_000)
@@ -244,7 +246,7 @@ struct IdentityHeader: View {
     }
 
     private func avatar(_ text: String) -> some View {
-        Circle().fill(.quaternary)
+        Circle().fill(Color(nsColor: .unemphasizedSelectedContentBackgroundColor).opacity(0.6))
             .frame(width: 30, height: 30)
             .overlay(Text(text).font(.caption.weight(.semibold)))
     }
@@ -279,9 +281,10 @@ struct AccountRow: View {
                            role: defaultRole(for: account))
         } label: {
             HStack(spacing: 10) {
-                Circle().fill(isActive ? AnyShapeStyle(Color.accentColor.opacity(0.25)) : AnyShapeStyle(.quaternary))
+                Circle().fill(isActive ? AnyShapeStyle(Color.accentColor.opacity(0.3)) : AnyShapeStyle(Color(nsColor: .unemphasizedSelectedContentBackgroundColor).opacity(0.6)))
                     .frame(width: 26, height: 26)
-                    .overlay(Text(initials(account.name)).font(.caption2.weight(.semibold)))
+                    .overlay(Text(initials(account.name)).font(.caption2.weight(.semibold))
+                        .foregroundStyle(.primary))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(account.name)
                         .fontWeight(isActive ? .semibold : .regular)
