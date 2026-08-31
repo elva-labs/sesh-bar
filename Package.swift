@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     dependencies: [
         .package(url: "https://github.com/awslabs/aws-sdk-swift", from: "1.0.0"),
-        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.0.0"),
+        .package(url: "https://github.com/elva-labs/KeyboardShortcuts", exact: "2.4.0-elva.1"),
     ],
     targets: [
         .target(

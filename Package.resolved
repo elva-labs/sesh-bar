@@ -1,5 +1,5 @@
 {
-  "originHash" : "054683e07a823253457ddd9755f2824b92d454d0f1078114ca784032c5a2028f",
+  "originHash" : "54fe8a5a644e34f3944a154c800c11b0e265dd51739e7a0861a6b34c12ba34c7",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -31,10 +31,10 @@
     {
       "identity" : "keyboardshortcuts",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/sindresorhus/KeyboardShortcuts",
+      "location" : "https://github.com/elva-labs/KeyboardShortcuts",
       "state" : {
-        "revision" : "1aef85578fdd4f9eaeeb8d53b7b4fc31bf08fe27",
-        "version" : "2.4.0"
+        "revision" : "471fd405fbb5ad1abd0bdb8165a6769c39e0a200",
+        "version" : "2.4.0-elva.1"
       }
     },
     {
