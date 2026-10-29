@@ -8,6 +8,9 @@ public struct SessionInfo: Hashable, Sendable {
     public let defaultRegion: String
     public let authenticated: Bool
     public let tokenExpires: Date?
+    /// The `~/.aws/credentials` profile this session's switches write to,
+    /// unless an account's role names its own.
+    public let profileName: String
 }
 
 public struct AccountInfo: Hashable, Sendable, Identifiable {
@@ -57,13 +60,16 @@ public enum AwseshServiceError: LocalizedError {
 public struct AwseshService: Sendable {
     public let store: AwseshStore
     public let starred: StarredStore
+    public let sessionProfiles: SessionProfileStore
     let providerFactory: @Sendable (String) -> any SSOProviding
 
     public init(store: AwseshStore = AwseshStore(),
                 starred: StarredStore = .standard(),
+                sessionProfiles: SessionProfileStore = .standard(),
                 providerFactory: @escaping @Sendable (String) -> any SSOProviding = { SSOService(region: $0) }) {
         self.store = store
         self.starred = starred
+        self.sessionProfiles = sessionProfiles
         self.providerFactory = providerFactory
     }
 
@@ -75,7 +81,8 @@ public struct AwseshService: Sendable {
             return SessionInfo(name: session.name, startUrl: session.startUrl,
                                ssoRegion: session.ssoRegion, defaultRegion: session.defaultRegion,
                                authenticated: token != nil,
-                               tokenExpires: token?.expiresAt)
+                               tokenExpires: token?.expiresAt,
+                               profileName: sessionProfiles.profile(session: session.name) ?? "default")
         }
     }
 
@@ -139,9 +146,11 @@ public struct AwseshService: Sendable {
         try store.removeToken(startUrl: session.startUrl)
     }
 
-    /// Switch the default AWS profile to the given account/role.
+    /// Switch the session's AWS profile to the given account/role.
     /// Role and region fall back to preferences, then to the account's first
     /// role / the session's default region — exactly like the Glaze app.
+    /// The profile is the role's own name if set, else the session's, else
+    /// `default`, so sessions with distinct profiles stay active side by side.
     @discardableResult
     public func setCredentials(session sessionName: String, account accountRef: String,
                                role: String? = nil, region: String? = nil) async throws -> String {
@@ -161,6 +170,7 @@ public struct AwseshService: Sendable {
             ?? session.defaultRegion
         let profileName = try store.profileName(sessionName: sessionName,
                                                 accountName: account.name, roleName: roleName)
+            ?? sessionProfiles.profile(session: sessionName)
 
         let provider = providerFactory(session.ssoRegion)
         let credentials: RoleCredentials
@@ -207,8 +217,11 @@ public struct AwseshService: Sendable {
 
     // MARK: - Session management
 
-    public func saveSession(_ session: SSOSession) throws {
+    /// A nil profile leaves the session's profile as is; empty or
+    /// "default" resets it to `[default]`.
+    public func saveSession(_ session: SSOSession, profileName: String? = nil) throws {
         try store.saveSession(session)
+        if let profileName { try sessionProfiles.setProfile(profileName, session: session.name) }
     }
 
     /// Remove a session along with its token and tracked credentials/profiles.
@@ -217,6 +230,7 @@ public struct AwseshService: Sendable {
         try store.clearSessionCredentials(sessionName: name, removeProfiles: true)
         if let session { try store.removeToken(startUrl: session.startUrl) }
         try store.removeSession(named: name)
+        try sessionProfiles.setProfile(nil, session: name)
     }
 
     public func signOut(session name: String) throws {

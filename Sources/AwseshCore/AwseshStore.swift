@@ -159,7 +159,8 @@ public struct AwseshStore: Sendable {
     /// Mirrors the JS SDK's save: drops expired entries and the replaced
     /// account/role, demotes every other entry when the new one is default,
     /// and purges stale non-default leftovers still claiming the "default"
-    /// profile (that profile can only hold one credential).
+    /// profile. Unlike the SDK it also purges other entries claiming the new
+    /// credential's profile, since any profile can only hold one credential.
     public func saveActiveCredential(_ credential: ActiveCredential) throws {
         let now = Date()
         var list = (try storage.read([ActiveCredential].self, key: "credentials/active") ?? [])
@@ -168,6 +169,7 @@ public struct AwseshStore: Sendable {
                 return date > now
             }
             .filter { !($0.accountId == credential.accountId && $0.roleName == credential.roleName) }
+            .filter { $0.profileName != credential.profileName }
             .map { entry in
                 var entry = entry
                 if credential.isDefault { entry.isDefault = false }

@@ -46,6 +46,7 @@ final class AwseshServiceTests: XCTestCase {
                             awsDir: base.appending(path: "aws"))
         service = AwseshService(store: AwseshStore(paths: paths),
                                 starred: StarredStore(directory: base.appending(path: "app")),
+                                sessionProfiles: SessionProfileStore(directory: base.appending(path: "app")),
                                 providerFactory: { _ in StubSSO() })
         try service.saveSession(SSOSession(name: "Elva", startUrl: "https://elva.awsapps.com/start",
                                            ssoRegion: "eu-north-1", defaultRegion: "eu-north-1"))
@@ -151,6 +152,56 @@ extension AwseshServiceTests {
 }
 
 extension AwseshServiceTests {
+    /// Sessions with distinct profiles each keep a live credential; the
+    /// role's own profile name still beats the session's.
+    func testSessionProfilesKeepSessionsActiveSideBySide() async throws {
+        try service.saveSession(SSOSession(name: "Other", startUrl: "https://other.awsapps.com/start",
+                                           ssoRegion: "eu-north-1", defaultRegion: "eu-west-1"),
+                                profileName: " other ")
+        try signIn()
+        try service.store.saveToken(TokenCache(token: "tok", expiresAt: Date().addingTimeInterval(3600),
+                                               startUrl: "https://other.awsapps.com/start"))
+        _ = try await service.refreshAccounts(session: "Elva")
+        _ = try await service.refreshAccounts(session: "Other")
+
+        XCTAssertEqual(try service.sessions().map(\.profileName), ["default", "other"])
+
+        _ = try await service.setCredentials(session: "Elva", account: "dev")
+        _ = try await service.setCredentials(session: "Other", account: "prod")
+        XCTAssertEqual(Set(try service.current().map(\.profileName)), ["default", "other"])
+        XCTAssertEqual(try service.current().first(where: \.isDefault)?.sessionName, "Elva")
+        XCTAssertEqual(Set(CredentialsFile.listProfiles(awsDir: paths.awsDir)), ["default", "other"])
+
+        // Re-switching within a session replaces only that profile's entry,
+        // even for another role (which the SDK's account/role key misses).
+        _ = try await service.setCredentials(session: "Other", account: "prod", role: "ReadOnly")
+        let current = try service.current()
+        XCTAssertEqual(current.count, 2)
+        XCTAssertEqual(current.first { $0.profileName == "other" }?.roleName, "ReadOnly")
+        XCTAssertEqual(current.first { $0.profileName == "default" }?.accountName, "dev")
+
+        try service.savePreferences(session: "Other", accountId: "111111111111", accountName: "prod",
+                                    defaultRole: nil, region: nil,
+                                    profileNamesByRole: ["AdministratorAccess": "prod-admin"])
+        _ = try await service.setCredentials(session: "Other", account: "prod", role: "AdministratorAccess")
+        XCTAssertEqual(try service.current().first { $0.roleName == "AdministratorAccess" }?.profileName,
+                       "prod-admin")
+
+        // Saving without a profile keeps it; "default" resets it; removal forgets it.
+        try service.saveSession(SSOSession(name: "Other", startUrl: "https://other.awsapps.com/start",
+                                           ssoRegion: "eu-north-1", defaultRegion: "eu-west-1"))
+        XCTAssertEqual(service.sessionProfiles.profile(session: "Other"), "other")
+        try service.saveSession(SSOSession(name: "Other", startUrl: "https://other.awsapps.com/start",
+                                           ssoRegion: "eu-north-1", defaultRegion: "eu-west-1"),
+                                profileName: "default")
+        XCTAssertNil(service.sessionProfiles.profile(session: "Other"))
+        try service.saveSession(SSOSession(name: "Other", startUrl: "https://other.awsapps.com/start",
+                                           ssoRegion: "eu-north-1", defaultRegion: "eu-west-1"),
+                                profileName: "other")
+        try service.removeSession(named: "Other")
+        XCTAssertNil(service.sessionProfiles.profile(session: "Other"))
+    }
+
     func testSavePreferencesSetsAndClears() async throws {
         try signIn()
         _ = try await service.refreshAccounts(session: "Elva")
@@ -214,6 +265,7 @@ final class RevokedTokenTests: XCTestCase {
         // inject a provider factory whose service maps the stub's error.
         let service = AwseshService(store: AwseshStore(paths: paths),
                                     starred: StarredStore(directory: base.appending(path: "s")),
+                                    sessionProfiles: SessionProfileStore(directory: base.appending(path: "s")),
                                     providerFactory: { _ in RevokedSSO() })
         try service.saveSession(SSOSession(name: "Elva", startUrl: "https://e.awsapps.com/start",
                                            ssoRegion: "eu-north-1", defaultRegion: "eu-north-1"))

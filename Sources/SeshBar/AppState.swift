@@ -40,6 +40,11 @@ final class AppState: ObservableObject {
         current.first(where: \.isDefault) ?? current.first
     }
 
+    /// The entry's live credential, newest first when it holds several.
+    func credential(for entry: Entry) -> CredentialInfo? {
+        current.last { $0.sessionName == entry.session.name && $0.accountId == entry.account.accountId }
+    }
+
     /// The active credential outlives its SSO session (issued STS creds are
     /// not revoked by sign-out) — true when that's the current situation.
     var activeSessionSignedOut: Bool {
@@ -256,9 +261,9 @@ final class AppState: ObservableObject {
 
     // MARK: - Session management
 
-    func saveSession(_ session: SSOSession) {
+    func saveSession(_ session: SSOSession, profileName: String) {
         do {
-            try service.saveSession(session)
+            try service.saveSession(session, profileName: profileName)
             reload()
         } catch {
             show(error)

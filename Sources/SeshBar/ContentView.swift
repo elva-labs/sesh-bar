@@ -429,16 +429,21 @@ struct AccountRow: View {
     private var account: AccountInfo { entry.account }
     private var session: SessionInfo { entry.session }
 
-    private var isActive: Bool {
-        guard let active = state.active else { return false }
-        return active.sessionName == session.name && active.accountId == account.accountId
-    }
+    /// This account's live credential in any profile — several sessions
+    /// can each hold one when they write to different profiles.
+    private var credential: CredentialInfo? { state.credential(for: entry) }
+    private var isActive: Bool { credential != nil }
 
     private var isSelected: Bool { state.selectedEntryID == entry.id }
 
     private var displayRole: String {
-        if isActive, let role = state.active?.roleName { return role }
+        if let role = credential?.roleName { return role }
         return defaultRole(for: account)
+    }
+
+    private var activeLabel: String {
+        guard let profile = credential?.profileName, profile != "default" else { return "Active" }
+        return "Active · \(profile)"
     }
 
     private var isPending: Bool {
@@ -474,7 +479,7 @@ struct AccountRow: View {
                 }
                 if isActive {
                     ExpandablePill(systemImage: "checkmark.circle.fill",
-                                   expandedText: "Active", tint: .green)
+                                   expandedText: activeLabel, tint: .green)
                 }
                 if !displayRole.isEmpty {
                     ExpandablePill(collapsedText: collapsedRole(displayRole),
@@ -519,7 +524,7 @@ struct AccountRow: View {
                 Button {
                     state.switchTo(session: session.name, account: account, role: role)
                 } label: {
-                    if isActive && state.active?.roleName == role {
+                    if credential?.roleName == role {
                         Label(shortRole(role), systemImage: "checkmark")
                     } else {
                         Text(shortRole(role))
@@ -636,7 +641,7 @@ struct AccountSettingsCard: View {
                                 .font(.system(size: 11))
                                 .frame(width: 90, alignment: .leading)
                                 .lineLimit(1)
-                            TextField("default", text: Binding(
+                            TextField(entry.session.profileName, text: Binding(
                                 get: { profiles[role] ?? "" },
                                 set: { profiles[role] = $0 }))
                                 .textFieldStyle(.roundedBorder)
@@ -644,7 +649,7 @@ struct AccountSettingsCard: View {
                                 .font(.system(size: 11).monospaced())
                         }
                     }
-                    Text("Named roles write to that profile in ~/.aws/credentials instead of [default] — reach them with AWS_PROFILE=name.")
+                    Text("Named roles write to that profile in ~/.aws/credentials instead of the session's [\(entry.session.profileName)] — reach them with AWS_PROFILE=name.")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
