@@ -8,6 +8,7 @@ Built on the same on-disk state as [`awsesh`](https://github.com/elva-labs/awses
 
 - Menu-bar title shows the **active account**; popover lists accounts grouped by SSO session, with search across accounts, roles, and sessions
 - One click switches your **default AWS profile** (role and region fall back to your remembered preferences); right-click for other roles
+- Give each SSO session its own **CLI profile** (default `default`) to keep several sessions active at once — pick one per terminal with `AWS_PROFILE`
 - **Starred accounts** pinned on top; token-expiry indicators per session and for the active credential
 - Sign in via the standard **SSO device-code browser flow**; sign out and session management (add/edit/remove) in Settings
 - Open the AWS console for the active account from the menu

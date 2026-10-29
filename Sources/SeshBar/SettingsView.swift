@@ -15,6 +15,7 @@ struct SettingsView: View {
         var startUrl = ""
         var ssoRegion = "us-east-1"
         var defaultRegion = "us-east-1"
+        var profileName = ""
     }
 
     var body: some View {
@@ -32,6 +33,7 @@ struct SettingsView: View {
                             Text(session.name)
                             Text(session.startUrl).font(.caption).foregroundStyle(.secondary)
                                 .lineLimit(1).truncationMode(.middle)
+                            Text("Profile: \(session.profileName)").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if session.authenticated {
@@ -46,7 +48,9 @@ struct SettingsView: View {
                             editing = EditTarget(original: session.name, name: session.name,
                                                  startUrl: session.startUrl,
                                                  ssoRegion: session.ssoRegion,
-                                                 defaultRegion: session.defaultRegion)
+                                                 defaultRegion: session.defaultRegion,
+                                                 profileName: session.profileName == "default"
+                                                    ? "" : session.profileName)
                         } label: { Image(systemName: "pencil") }
                             .buttonStyle(.borderless)
                             .accessibilityLabel("Edit \(session.name)")
@@ -89,6 +93,13 @@ struct SessionForm: View {
     private var valid: Bool {
         !target.name.isEmpty && target.startUrl.hasPrefix("https://")
             && !target.ssoRegion.isEmpty && !target.defaultRegion.isEmpty
+            && profileValid
+    }
+
+    /// Becomes an INI section header, so no brackets or inner whitespace.
+    private var profileValid: Bool {
+        let trimmed = target.profileName.trimmingCharacters(in: .whitespaces)
+        return !trimmed.contains { $0.isWhitespace || $0 == "[" || $0 == "]" }
     }
 
     var body: some View {
@@ -101,7 +112,11 @@ struct SessionForm: View {
                 TextField("Start URL", text: $target.startUrl, prompt: Text("https://…awsapps.com/start"))
                 TextField("SSO region", text: $target.ssoRegion)
                 TextField("Default region", text: $target.defaultRegion)
+                TextField("CLI profile", text: $target.profileName, prompt: Text("default"))
             }
+            Text("Switches write to this profile in ~/.aws/credentials. Give sessions different profiles to keep them active side by side, then pick one with AWS_PROFILE=name.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
                 Button("Cancel", action: onClose).keyboardShortcut(.cancelAction)
@@ -109,7 +124,8 @@ struct SessionForm: View {
                     state.saveSession(SSOSession(name: target.name,
                                                  startUrl: target.startUrl,
                                                  ssoRegion: target.ssoRegion,
-                                                 defaultRegion: target.defaultRegion))
+                                                 defaultRegion: target.defaultRegion),
+                                      profileName: target.profileName)
                     onClose()
                 }
                 .keyboardShortcut(.defaultAction)
